@@ -73,6 +73,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
+        timeout-minutes: 45
         run: cargo test --workspace --locked --no-fail-fast
 
       # The tray's D-Bus tests again, required: without dbus-daemon they would skip, and pass, above. `--workspace` keeps
