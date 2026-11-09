@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'test/**']
   pull_request:
   workflow_dispatch:
 
@@ -84,10 +84,33 @@ jobs:
           CRAFT_CLOUD_REQUIRE_BACKENDS: "1"
         run: cargo test --workspace --lib --locked tray::linux
 
-      # The app bundle is built only on macOS: CI checks it builds (unsigned, not published).
-      - name: Package (macOS app bundle)
-        if: runner.os == 'macOS'
+      # Test branch only: every OS builds its package and uploads it.
+      - name: Package
         run: cargo xtask package
+
+      - name: Build the release server (Linux)
+        if: runner.os == 'Linux'
+        run: cargo build --release --locked -p craft-cloud-server
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.os }}
+          path: |
+            target/package/*.zip
+            target/package/*.tar.gz
+            target/package/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload the release server (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: craft-cloud-server-linux
+          path: target/release/craft-cloud-server
+          if-no-files-found: error
+          retention-days: 7
 
   backends:
     name: Postgres and S3 backends
