@@ -893,8 +893,8 @@ digest).
 
 Every service has a read-only root filesystem, no capabilities (`cap_drop: [ALL]`), `no-new-privileges`, memory and
 process limits, and a `noexec` tmpfs for `/tmp`. The exceptions are explained next to each service: Postgres and
-`secrets-init` start as root and need a few capabilities to fix ownership, Caddy needs to bind ports 80 and 443, and
-`secrets-init` (in the Postgres and S3 overlays) is not read-only because Compose writes its secret files into the
+`secrets-init` start as root and need a few capabilities to fix ownership, Caddy needs to bind ports 80 and 443 and
+to read a custom certificate that belongs to you, and `secrets-init` (in the Postgres and S3 overlays) is not read-only because Compose writes its secret files into the
 root filesystem.
 
 Three networks keep the parts apart: `edge` (published ports and outbound access: Caddy and `update-check` only), `frontend` (internal;
@@ -936,7 +936,9 @@ Set `CC_TLS_MODE` in `.env`:
   `CC_PUBLIC_URL`).
 - `internal`: a certificate from Caddy's own CA, for tests. Clients do not trust it. There is no HSTS in this mode.
 - `custom`: your own certificate. Put `fullchain.pem` and `private.key` in `packaging/docker/tls/` (or `CC_TLS_DIR`),
-  readable by root only, and restart Caddy to load a renewed one.
+  and restart Caddy to load a renewed one. `install.sh` creates `tls/` with mode 0700 for you, and the key can stay
+  readable by you alone (mode 0600): Caddy runs as root in its container with the capability `DAC_READ_SEARCH`, which
+  lets it read files and open directories whatever their owner and mode, and nothing else.
 
 Caddy sets a request header timeout of 10 seconds, as the checklist above asks. It writes no access log, because URLs hold invite
 codes (`/join/<code>`); its error log leaves out the request's URI and headers for the same reason.
@@ -1039,8 +1041,13 @@ updated, the image rebuilt) and how to go back with `git reset --hard <old commi
 after a failure; a migrated database is never rolled back automatically. `--yes` skips the confirmation.
 `--skip-backup` is an explicit override and prints a warning.
 
-Every update adds a full copy of the data volume, blobs included, to `backups/`. Nothing removes old ones: check the
-free space and delete backups you no longer need.
+Every update adds a full copy of the data volume, blobs included, to `backups/`. After an update that succeeded,
+`update.sh` keeps the newest 3 backups (this run's included) and removes the older ones, and prints each one it removes.
+Change the number with `--keep N` or the environment variable `CC_BACKUP_KEEP`; `0` keeps every backup. Only directories
+named like its own (`backups/20260101T120000Z`) are touched. A failed update, `--skip-backup` and `--keep 0` remove
+nothing. The files in a backup belong to the server's user (uid 65532), so a short-lived container removes them as root,
+as one made them; if that fails the script says so and goes on, and you remove the directory by hand. Three backups of a
+large data volume still take three times its size: check the free space, and move a backup you want to keep elsewhere.
 
 To upgrade manually, stop the server and back up first. SQLite backup: copy `meta.db*`, `blobs/` and
 `two-factor.key` from the `data` volume. Postgres backup: `pg_dump` from `db`, plus `blobs/` and `two-factor.key`.
